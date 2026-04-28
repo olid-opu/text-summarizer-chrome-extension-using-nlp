@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "AI Text Summarizer",
+  "version": "1.0.0",
+  "description": "Summarize the current page or your selected text with AI.",
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": "icon.png"
+  },
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["http://127.0.0.1:8000/*", "https://*.onrender.com/*"],
+  "icons": {
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}
