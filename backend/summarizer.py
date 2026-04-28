@@ -1,6 +1,7 @@
 import os
 from typing import Literal
 
+import openai
 import requests
 
 
@@ -24,19 +25,58 @@ class SummaryInputError(ValueError):
 
 class TextSummarizer:
     def __init__(self) -> None:
-        token = os.environ.get("HUGGINGFACE_API_TOKEN", "").strip()
-        self.headers = {
-            "Authorization": f"Bearer {token}",
+        self.openai_api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+        self.hf_token = os.environ.get("HUGGINGFACE_API_TOKEN", "").strip()
+
+        if self.openai_api_key:
+            openai.api_key = self.openai_api_key
+
+        self.hf_headers = {
+            "Authorization": f"Bearer {self.hf_token}",
             "Content-Type": "application/json",
-        } if token else {"Content-Type": "application/json"}
+        } if self.hf_token else {"Content-Type": "application/json"}
 
     def summarize(self, text: str, summary_type: SummaryType) -> str:
         clean_text = self._normalize_text(text)
         self._validate_text(clean_text)
 
+        if self.openai_api_key:
+            return self._summarize_with_openai(clean_text, summary_type)
+
+        if self.hf_token:
+            return self._summarize_with_huggingface(clean_text, summary_type)
+
+        raise SummaryInputError(
+            "No inference service configured. Set OPENAI_API_KEY or HUGGINGFACE_API_TOKEN."
+        )
+
+    def _summarize_with_openai(self, text: str, summary_type: SummaryType) -> str:
+        min_length, max_length = SUMMARY_LENGTHS[summary_type]
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that summarizes text.",
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Summarize the following text in a {summary_type} style. "
+                        f"Try to keep the result between {min_length} and {max_length} words.\n\n{text}"
+                    ),
+                },
+            ],
+            max_tokens=512,
+            temperature=0.3,
+        )
+
+        return response.choices[0].message["content"].strip()
+
+    def _summarize_with_huggingface(self, text: str, summary_type: SummaryType) -> str:
         min_length, max_length = SUMMARY_LENGTHS[summary_type]
         payload = {
-            "inputs": clean_text[:MAX_INPUT_CHARACTERS],
+            "inputs": text[:MAX_INPUT_CHARACTERS],
             "parameters": {
                 "min_length": min_length,
                 "max_length": max_length,
@@ -44,7 +84,7 @@ class TextSummarizer:
             },
         }
 
-        response = requests.post(HF_API_URL, headers=self.headers, json=payload, timeout=60)
+        response = requests.post(HF_API_URL, headers=self.hf_headers, json=payload, timeout=60)
         if response.status_code != 200:
             raise SummaryInputError(
                 f"Hugging Face inference failed ({response.status_code}): {response.text}"
